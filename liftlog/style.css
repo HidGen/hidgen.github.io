@@ -13,6 +13,8 @@
   --radius: 14px;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* iOS Safari не диспатчит click по обычным div без cursor:pointer — делаем все кликабельные элементы «кликабельными» */
+[data-act] { cursor: pointer; }
 html, body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;

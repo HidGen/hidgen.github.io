@@ -91,11 +91,15 @@ const b64enc = (s) => btoa(unescape(encodeURIComponent(s)));
 const b64dec = (b) => decodeURIComponent(escape(atob(b)));
 function ghHeaders() { return { Authorization: 'Bearer ' + gh().token, Accept: 'application/vnd.github+json' }; }
 function ghUrl(path) { const g = gh(); return `https://api.github.com/repos/${g.repo}/contents/${path}`; }
+function ghFetch(url, opts) {           // fetch с таймаутом, чтобы не висло на плохой сети
+  const c = new AbortController(); const tid = setTimeout(() => c.abort(), 15000);
+  return fetch(url, { ...(opts || {}), signal: c.signal }).finally(() => clearTimeout(tid));
+}
 const ownerPath = (owner) => 'athletes/' + owner.replace(/[^A-Za-z0-9_-]/g, '_') + '.json';
 
 async function ghGet(path) {
   const g = gh();
-  const r = await fetch(ghUrl(path) + '?ref=' + encodeURIComponent(g.branch || 'main') + '&t=' + Date.now(), { headers: ghHeaders() });
+  const r = await ghFetch(ghUrl(path) + '?ref=' + encodeURIComponent(g.branch || 'main') + '&t=' + Date.now(), { headers: ghHeaders() });
   if (r.status === 404) return { data: null, sha: null };
   if (!r.ok) throw new Error('GET ' + r.status);
   const j = await r.json();
@@ -105,7 +109,7 @@ async function ghPut(path, obj, sha, msg) {
   const g = gh();
   const body = { message: msg, content: b64enc(JSON.stringify(obj)), branch: g.branch || 'main' };
   if (sha) body.sha = sha;
-  const r = await fetch(ghUrl(path), { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await ghFetch(ghUrl(path), { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (r.status === 409) throw new Error('conflict');
   if (!r.ok) throw new Error('PUT ' + r.status);
 }
@@ -147,7 +151,16 @@ const S = {
 const inAthlete = () => S.role === 'trainer' && S.owner !== me();
 
 // ──────────────── данные (с учётом owner) ────────────────
-async function ownedAll(store) { return (await getAll(store)).filter((r) => ownerOf(r) === S.owner && !r.deleted); }
+async function ownedBy(store, owner) { return (await getAll(store)).filter((r) => ownerOf(r) === owner && !r.deleted); }
+async function ownedAll(store) { return ownedBy(store, S.owner); }
+async function syncAllTrainees() {
+  if (S.sync.running || !ghReady() || !navigator.onLine || !trainees().length) return;
+  S.sync.running = true; S.sync.msg = 'обновляю подопечных…';
+  if (S.screen === 'home') render();
+  for (const t of trainees()) { try { await syncOwner(t.id); } catch (e) {} }
+  S.sync.running = false; S.sync.msg = 'обновлено · ' + new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  if (S.role === 'trainer' && S.owner === me()) render();
+}
 async function activeWorkout() { return (await ownedAll('workouts')).filter((w) => !w.finishedAt).sort((a, b) => b.startedAt - a.startedAt)[0] || null; }
 async function startWorkout() { const w = { id: uid(), owner: S.owner, startedAt: Date.now(), finishedAt: null }; await save('workouts', w); S.workout = w; }
 async function finishWorkout() { if (!S.workout) return; S.workout.finishedAt = Date.now(); await save('workouts', S.workout); S.workout = null; await autoSync(); }
@@ -192,7 +205,15 @@ async function openExercise(ex) {
   S._restAt = last ? last.loggedAt : 0; S.draft.kind = ex.kind;
   S.draft.values = last ? { ...last.values } : defValues(ex.kind); go('exercise');
 }
-async function enterAthlete(id) { S.owner = id; S.workout = null; if (ghReady()) { try { await syncOwner(id); } catch (e) {} } S.workout = await activeWorkout(); go('home'); }
+async function enterAthlete(id) {
+  S.owner = id;
+  S.workout = await activeWorkout();   // открываем сразу из локального кэша
+  go('home');
+  if (ghReady() && navigator.onLine) { // свежие данные подтягиваем в фоне, потом обновляем экран
+    try { await syncOwner(id); } catch (e) {}
+    if (S.role === 'trainer' && S.owner === id) { S.workout = await activeWorkout(); render(); }
+  }
+}
 function leaveAthlete() { S.owner = me(); S.workout = null; go('home'); }
 
 // ──────────────── рендер ────────────────
@@ -206,6 +227,7 @@ const draftFields = () => kindOf(S.draft.kind).fields.map((f) => fieldStepper(f,
 
 async function render() {
   if (S.screen === 'settings') return renderSettings();
+  if (S.screen === 'addTrainee') return renderAddTrainee();
   if (S.screen === 'newExercise') return renderNewExercise();
   if (S.screen === 'exercise') return renderExercise();
   if (S.screen === 'history') return renderHistory();
@@ -244,15 +266,29 @@ async function renderHome() {
 }
 
 async function renderTrainer() {
-  const rows = trainees().map((t) => `<div class="item">
-      <div class="grow" data-act="open-trainee" data-id="${esc(t.id)}"><div class="name">${esc(t.label || t.id)}</div><div class="meta">${esc(t.id)}</div></div>
-      <button class="x" data-act="remove-trainee" data-id="${esc(t.id)}">✕</button></div>`).join('');
-  app.innerHTML = topBar('Подопечные', `<button class="icon-btn" data-act="open-settings">⚙</button>`) +
-    `<div class="list">${rows || '<div class="empty">Подопечных пока нет. Добавь по ID, который дал качок.</div>'}</div>
-     <label class="field"><div class="lab">ID подопечного</div><input class="text" id="tId" placeholder="напр. K7Q2-9MF3" autocomplete="off"></label>
+  const list = trainees();
+  const rows = [];
+  for (const t of list) {
+    const ws = (await ownedBy('workouts', t.id)).filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
+    const meta = ws.length ? `посл.: ${esc(fmtDate(ws[0].startedAt).replace(/,.*/, ''))} · ${ws.length} трен.` : '<span class="muted">нет данных — обнови ⟳</span>';
+    rows.push(`<div class="item" data-act="open-trainee" data-id="${esc(t.id)}">
+      <div class="grow"><div class="name">${esc(t.label || t.id)}</div><div class="meta">${meta}</div></div>
+      <div class="muted" style="font-size:22px">›</div></div>`);
+  }
+  const right = `${(list.length && ghReady()) ? `<button class="icon-btn" data-act="sync-trainees">${S.sync.running ? '…' : '⟳'}</button>` : ''}<button class="icon-btn" data-act="open-add-trainee">＋</button>`;
+  app.innerHTML = topBar('Подопечные', right) +
+    `<div class="list">${rows.join('') || '<div class="empty">Подопечных пока нет — добавь по ＋ вверху (ID даёт качок).</div>'}</div>
+     ${S.sync.msg ? `<div class="timer">${esc(S.sync.msg)}</div>` : ''}
+     <div class="actions"><button class="btn" data-act="open-settings">⚙ Настройки</button></div>`;
+}
+
+async function renderAddTrainee() {
+  app.innerHTML = topBar('Добавить подопечного', `<button class="icon-btn" data-act="go-home">✕</button>`) +
+    `<label class="field"><div class="lab">ID подопечного (даёт качок)</div><input class="text" id="tId" placeholder="напр. K7Q2-9MF3" autocomplete="off"></label>
      <input class="text" id="tLabel" placeholder="Имя (необязательно)" autocomplete="off" style="margin-top:8px">
-     <button class="btn btn-primary" data-act="add-trainee" style="margin-top:8px">+ Добавить</button>
-     <div class="actions"><button class="btn btn-ghost" data-act="open-settings">← Настройки и роль</button></div>`;
+     <div style="flex:1"></div>
+     <button class="btn btn-primary btn-big" data-act="add-trainee">Добавить</button>`;
+  const i = $('#tId'); if (i) i.focus();
 }
 
 async function renderNewExercise() {
@@ -341,12 +377,14 @@ document.addEventListener('click', async (e) => {
   if (act === 'import') { const f = $('#importFile'); if (f) f.click(); return; }
   // роль / тренер / синк
   if (act === 'open-settings') return go('settings');
-  if (act === 'set-role') { S.role = t.dataset.role; LS.set('role', S.role); S.owner = me(); S.workout = await activeWorkout(); return go('home'); }
+  if (act === 'set-role') { S.role = t.dataset.role; LS.set('role', S.role); S.owner = me(); S.workout = S.role === 'trainer' ? null : await activeWorkout(); if (S.role === 'trainer') syncAllTrainees(); return render(); /* остаёмся в Настройках; уход — по ✕ */ }
+  if (act === 'sync-trainees') return syncAllTrainees();
+  if (act === 'open-add-trainee') return go('addTrainee');
   if (act === 'copy-id') { try { await navigator.clipboard.writeText(t.dataset.id); } catch (e) {} alert('ID скопирован: ' + t.dataset.id); return; }
   if (act === 'sync-now') { const r = $('#ghRepo'), tk = $('#ghToken'); if (tk && tk.value.trim()) LS.set('gh', { token: tk.value.trim(), repo: (r && r.value.trim()) || gh().repo, branch: gh().branch || 'main' }); return syncNow(); }
   if (act === 'open-trainee') return enterAthlete(t.dataset.id);
   if (act === 'leave-athlete') return leaveAthlete();
-  if (act === 'add-trainee') { const idEl = $('#tId'); const id = idEl && idEl.value.trim(); if (!id) return; const label = ($('#tLabel') && $('#tLabel').value.trim()) || ''; const list = trainees(); if (!list.find((x) => x.id === id)) list.push({ id, label }); LS.set('trainees', list); return go('home'); }
+  if (act === 'add-trainee') { const idEl = $('#tId'); const id = idEl && idEl.value.trim(); if (!id) return; const label = ($('#tLabel') && $('#tLabel').value.trim()) || ''; const list = trainees(); if (!list.find((x) => x.id === id)) list.push({ id, label }); LS.set('trainees', list); go('home'); return syncAllTrainees(); }
   if (act === 'remove-trainee') { LS.set('trainees', trainees().filter((x) => x.id !== t.dataset.id)); return go('home'); }
 });
 
@@ -367,5 +405,6 @@ setInterval(() => {
   S.workout = S.role === 'trainer' ? null : await activeWorkout();
   render();
   if (S.role === 'lifter') autoSync().then(() => activeWorkout()).then((w) => { S.workout = w; if (S.screen === 'home') render(); });
-  window.addEventListener('online', () => { if (S.role === 'lifter') autoSync(); });
+  if (S.role === 'trainer') syncAllTrainees();
+  window.addEventListener('online', () => { if (S.role === 'lifter') autoSync(); else syncAllTrainees(); });
 })();
