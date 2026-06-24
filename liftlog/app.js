@@ -217,7 +217,7 @@ async function renderHome() {
   const athlete = inAthlete();
   const backRight = athlete
     ? `<button class="icon-btn" data-act="leave-athlete">← подопечные</button>`
-    : `<button class="icon-btn" data-act="open-settings">⚙</button>`;
+    : '';   // у качка сверху кнопок нет — «⚙ Настройки» снизу
   if (!S.workout) {
     const ws = (await ownedAll('workouts')).filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
     const cards = await workoutCardsHtml(ws);
