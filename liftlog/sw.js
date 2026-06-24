@@ -1,5 +1,5 @@
 // Service worker — кэш оболочки приложения для офлайна (работает в secure context: https / localhost).
-const CACHE = 'liftlog-v6';
+const CACHE = 'liftlog-v7';
 const ASSETS = ['./', 'index.html', 'app.js', 'style.css', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

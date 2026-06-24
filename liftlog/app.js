@@ -219,19 +219,15 @@ async function renderHome() {
     ? `<button class="icon-btn" data-act="leave-athlete">← подопечные</button>`
     : `<button class="icon-btn" data-act="open-settings">⚙</button>`;
   if (!S.workout) {
-    const recent = await recentWorkouts(4);
-    const rrows = recent.map((w) => {
-      const vol = w._exs.reduce((a, ex) => a + exTonnage(ex), 0);
-      const names = w._exs.map((ex) => ex.name).join(', ');
-      return `<div class="item"><div class="grow"><div class="name">${esc(fmtDate(w.startedAt))}</div>
-        <div class="meta">${w._exs.length} упр${vol ? ' · ' + Math.round(vol) + ' кг' : ''}${names ? ' · ' + esc(names) : ''}</div></div></div>`;
-    }).join('');
+    const ws = (await ownedAll('workouts')).filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
+    const cards = await workoutCardsHtml(ws);
     const title = athlete ? traineeLabel(S.owner) : 'Считалка для качалки';
     const startLabel = athlete ? `▶ Тренировка за ${esc(traineeLabel(S.owner))}` : '▶ Начать тренировку';
     app.innerHTML = topBar(title, backRight) +
-      `${recent.length ? `<div class="lab" style="color:var(--muted);font-size:13px">Последние тренировки</div><div class="list">${rrows}</div>` : '<div style="flex:1"></div>'}
-       <button class="btn btn-primary btn-big" data-act="start-workout">${startLabel}</button>
-       <div class="btn-row"><button class="btn" data-act="open-history">📋 История</button>${athlete ? '' : '<button class="btn" data-act="open-settings">⚙ Настройки</button>'}</div>`;
+      `<div class="list">${cards || '<div class="empty">Пока нет тренировок — начни первую</div>'}</div>
+       <div class="actions">
+         <button class="btn btn-primary btn-big" data-act="start-workout">${startLabel}</button>
+         ${athlete ? '' : '<button class="btn" data-act="open-settings">⚙ Настройки</button>'}</div>`;
     return;
   }
   const exs = await exercisesOf(S.workout.id);
@@ -252,10 +248,11 @@ async function renderTrainer() {
       <div class="grow" data-act="open-trainee" data-id="${esc(t.id)}"><div class="name">${esc(t.label || t.id)}</div><div class="meta">${esc(t.id)}</div></div>
       <button class="x" data-act="remove-trainee" data-id="${esc(t.id)}">✕</button></div>`).join('');
   app.innerHTML = topBar('Подопечные', `<button class="icon-btn" data-act="open-settings">⚙</button>`) +
-    `<div class="list">${rows || '<div class="empty">Пока никого. Добавь по ID, который дал качок.</div>'}</div>
+    `<div class="list">${rows || '<div class="empty">Подопечных пока нет. Добавь по ID, который дал качок.</div>'}</div>
      <label class="field"><div class="lab">ID подопечного</div><input class="text" id="tId" placeholder="напр. K7Q2-9MF3" autocomplete="off"></label>
      <input class="text" id="tLabel" placeholder="Имя (необязательно)" autocomplete="off" style="margin-top:8px">
-     <button class="btn btn-primary" data-act="add-trainee" style="margin-top:8px">+ Добавить</button>`;
+     <button class="btn btn-primary" data-act="add-trainee" style="margin-top:8px">+ Добавить</button>
+     <div class="actions"><button class="btn btn-ghost" data-act="open-settings">← Настройки и роль</button></div>`;
 }
 
 async function renderNewExercise() {
@@ -282,8 +279,7 @@ async function renderExercise() {
      <div class="sets">${rows || ''}</div>`;
 }
 
-async function renderHistory() {
-  const ws = (await ownedAll('workouts')).filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
+async function workoutCardsHtml(ws) {
   const blocks = [];
   for (const w of ws) {
     const exs = await exercisesOf(w.id);
@@ -293,8 +289,13 @@ async function renderHistory() {
       <div class="grow"><div class="name">${esc(fmtDate(w.startedAt))}</div><div class="meta">${exs.length} упр · ${cnt} подх${tonnage ? ` · ${Math.round(tonnage)} кг` : ''} · ${fmtClock(w.finishedAt - w.startedAt)}</div></div><div class="muted">▾</div></div></summary>
       <div class="list" style="margin-top:10px">${inner || '<div class="empty">пусто</div>'}</div></details>`);
   }
+  return blocks.join('');
+}
+async function renderHistory() {
+  const ws = (await ownedAll('workouts')).filter((w) => w.finishedAt).sort((a, b) => b.startedAt - a.startedAt);
+  const cards = await workoutCardsHtml(ws);
   app.innerHTML = topBar(inAthlete() ? 'История · ' + esc(traineeLabel(S.owner)) : 'История', `<button class="icon-btn" data-act="go-home">✕</button>`) +
-    `<div class="list">${blocks.join('') || '<div class="empty">Пока нет завершённых тренировок</div>'}</div>`;
+    `<div class="list">${cards || '<div class="empty">Пока нет завершённых тренировок</div>'}</div>`;
 }
 
 async function renderSettings() {

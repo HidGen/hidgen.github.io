@@ -50,6 +50,11 @@ html, body {
 .btn-row { display: flex; gap: 10px; }
 .btn-row .btn { flex: 1; }
 
+/* нижняя панель действий — прилипает к низу экрана */
+.actions { margin-top: auto; position: sticky; bottom: 0; background: var(--bg);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 0 calc(6px + env(safe-area-inset-bottom)); }
+
 /* карточки/списки */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .muted { color: var(--muted); }
