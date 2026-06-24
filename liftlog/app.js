@@ -144,11 +144,11 @@ async function syncOwner(owner) {
 
 // ──────────────── состояние ────────────────
 const S = {
-  screen: 'home', role: 'lifter', owner: '', workout: null, exercise: null, entries: [],
+  screen: 'home', role: 'lifter', owner: '', viewingAthlete: false, workout: null, exercise: null, entries: [],
   draft: { name: '', kind: DEFAULT_KIND, values: defValues(DEFAULT_KIND) }, _restAt: 0,
   sync: { running: false, msg: '' },
 };
-const inAthlete = () => S.role === 'trainer' && S.owner !== me();
+const inAthlete = () => S.role === 'trainer' && S.viewingAthlete;
 
 // ──────────────── данные (с учётом owner) ────────────────
 async function ownedBy(store, owner) { return (await getAll(store)).filter((r) => ownerOf(r) === owner && !r.deleted); }
@@ -159,7 +159,7 @@ async function syncAllTrainees() {
   if (S.screen === 'home') render();
   for (const t of trainees()) { try { await syncOwner(t.id); } catch (e) {} }
   S.sync.running = false; S.sync.msg = 'обновлено · ' + new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-  if (S.role === 'trainer' && S.owner === me()) render();
+  if (S.role === 'trainer' && !S.viewingAthlete && S.screen === 'home') render();
 }
 async function activeWorkout() { return (await ownedAll('workouts')).filter((w) => !w.finishedAt).sort((a, b) => b.startedAt - a.startedAt)[0] || null; }
 async function startWorkout() { const w = { id: uid(), owner: S.owner, startedAt: Date.now(), finishedAt: null }; await save('workouts', w); S.workout = w; }
@@ -206,15 +206,15 @@ async function openExercise(ex) {
   S.draft.values = last ? { ...last.values } : defValues(ex.kind); go('exercise');
 }
 async function enterAthlete(id) {
-  S.owner = id;
+  S.viewingAthlete = true; S.owner = id;
   S.workout = await activeWorkout();   // открываем сразу из локального кэша
   go('home');
   if (ghReady() && navigator.onLine) { // свежие данные подтягиваем в фоне, потом обновляем экран
     try { await syncOwner(id); } catch (e) {}
-    if (S.role === 'trainer' && S.owner === id) { S.workout = await activeWorkout(); render(); }
+    if (S.viewingAthlete && S.owner === id) { S.workout = await activeWorkout(); render(); }
   }
 }
-function leaveAthlete() { S.owner = me(); S.workout = null; go('home'); }
+function leaveAthlete() { S.viewingAthlete = false; S.owner = me(); S.workout = null; go('home'); }
 
 // ──────────────── рендер ────────────────
 const app = $('#app');
@@ -231,7 +231,7 @@ async function render() {
   if (S.screen === 'newExercise') return renderNewExercise();
   if (S.screen === 'exercise') return renderExercise();
   if (S.screen === 'history') return renderHistory();
-  if (S.role === 'trainer' && S.owner === me()) return renderTrainer();
+  if (S.role === 'trainer' && !S.viewingAthlete) return renderTrainer();
   return renderHome();
 }
 
@@ -377,7 +377,7 @@ document.addEventListener('click', async (e) => {
   if (act === 'import') { const f = $('#importFile'); if (f) f.click(); return; }
   // роль / тренер / синк
   if (act === 'open-settings') return go('settings');
-  if (act === 'set-role') { S.role = t.dataset.role; LS.set('role', S.role); S.owner = me(); S.workout = S.role === 'trainer' ? null : await activeWorkout(); if (S.role === 'trainer') syncAllTrainees(); return render(); /* остаёмся в Настройках; уход — по ✕ */ }
+  if (act === 'set-role') { S.role = t.dataset.role; LS.set('role', S.role); S.owner = me(); S.viewingAthlete = false; S.workout = S.role === 'trainer' ? null : await activeWorkout(); if (S.role === 'trainer') syncAllTrainees(); return render(); /* остаёмся в Настройках; уход — по ✕ */ }
   if (act === 'sync-trainees') return syncAllTrainees();
   if (act === 'open-add-trainee') return go('addTrainee');
   if (act === 'copy-id') { try { await navigator.clipboard.writeText(t.dataset.id); } catch (e) {} alert('ID скопирован: ' + t.dataset.id); return; }
