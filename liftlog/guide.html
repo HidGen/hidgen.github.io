@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2f81f7">
+<title>Считалка для качалки — инструкция</title>
+<style>
+  :root { --fg:#1c2530; --muted:#5b6675; --line:#e6e9ef; --accent:#2f81f7; --card:#f6f8fb; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:#fff; color:var(--fg);
+    font:17px/1.6 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:24px 18px 60px; }
+  h1 { font-size:26px; margin:.2em 0 .1em; }
+  h2 { font-size:20px; margin:1.6em 0 .4em; }
+  .lead { color:var(--muted); margin:.3em 0 1.2em; }
+  a { color:var(--accent); }
+  .cta { display:block; text-align:center; background:var(--accent); color:#fff; text-decoration:none;
+    font-size:19px; font-weight:700; padding:16px; border-radius:14px; margin:18px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin:12px 0; }
+  ol,ul { padding-left:22px; margin:.4em 0; }
+  li { margin:.35em 0; }
+  .muted { color:var(--muted); }
+  .tag { display:inline-block; background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:2px 10px; font-size:14px; margin:2px 4px 2px 0; }
+  hr { border:none; border-top:1px solid var(--line); margin:1.6em 0; }
+  .foot { color:var(--muted); font-size:14px; margin-top:2em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏋 Считалка для качалки</h1>
+  <p class="lead">Лёгкий дневник тренировок. Открывается по ссылке, ставится из браузера —
+    <b>без App Store и магазинов приложений</b>. Всё сохраняется и синхронизируется само,
+    настраивать ничего не нужно.</p>
+
+  <a class="cta" href="https://hidgen.github.io/liftlog/">▶ Открыть приложение</a>
+
+  <h2>📲 Поставить как приложение</h2>
+  <p class="muted">По желанию — можно просто пользоваться в браузере.</p>
+  <div class="card">
+    <b>iPhone (Safari):</b> открой ссылку → «Поделиться» (квадрат со стрелкой ↑) →
+    <b>«На экран „Домой"»</b>.
+  </div>
+  <div class="card">
+    <b>Android (Chrome):</b> открой ссылку → баннер <b>«Установить приложение»</b>
+    (или меню ⋮ → «Установить приложение»).
+  </div>
+  <p class="muted">Если приложение уже стоит, а нового не видно — закрой и снова открой иконку.</p>
+
+  <h2>Две роли</h2>
+  <p>Роль переключается в <b>⚙ Настройки</b>:</p>
+  <p><span class="tag">🏋 Качок</span> ведёшь свои тренировки.
+     <span class="tag">📋 Тренер</span> ведёшь тренировки подопечных и смотришь их прогресс.</p>
+  <p class="muted">У каждого есть короткий <b>ID</b> (в ⚙ Настройки). Качок даёт свой ID тренеру —
+     и тренер видит его тренировки. Работает и без интернета (синк догонит позже).</p>
+
+  <hr>
+
+  <h2>Если ты — Качок 🏋</h2>
+  <ol>
+    <li>Нажми <b>«Начать тренировку»</b> (внизу экрана).</li>
+    <li><b>«+ Упражнение»</b> → выбери тип (Силовое / Свой вес / Кардио / На время) и название
+        (тапни из недавних или впиши своё), задай стартовый вес/параметры.</li>
+    <li>После каждого подхода жми большую кнопку <b>«Записать N × R»</b>.
+        Следующий подход по умолчанию такой же — часто хватает <b>одного тапа</b>;
+        число можно тапнуть и ввести точно.</li>
+    <li><b>«Готово»</b> → упражнение в списке. Затем <b>«Завершить тренировку»</b>.</li>
+    <li>Прошлые тренировки — на главном экране и в <b>«📋 История»</b>.</li>
+    <li>Свой <b>ID</b> для тренера — в ⚙ Настройки (кнопка «копировать»).</li>
+  </ol>
+
+  <h2>Если ты — Тренер 📋</h2>
+  <ol>
+    <li>⚙ Настройки → роль <b>«📋 Тренер»</b> → закрой настройки крестиком (✕).</li>
+    <li>На стартовом экране — список подопечных. Добавь по кнопке <b>＋</b> вверху
+        (нужен ID, который тебе дал качок) — можно указать имя.</li>
+    <li><b>Тапни подопечного</b> → откроется его история и кнопка <b>«▶ Тренировка за …»</b>:
+        можно вести его тренировку со своего телефона.</li>
+    <li><b>⟳</b> вверху — обновить данные подопечных.</li>
+  </ol>
+
+  <hr>
+
+  <h2>Что хочется в фидбеке</h2>
+  <ul>
+    <li>Удобно ли записывать «в пару движений» усталыми руками? Что неочевидно/раздражает?</li>
+    <li>Тренеру: понятно ли добавлять/выбирать подопечного и вести за него?</li>
+    <li>Любые баги, тормоза, странности — особенно на твоём телефоне.</li>
+    <li>Чего не хватает для реального зала?</li>
+  </ul>
+
+  <p class="foot">Приложение не спрашивает и не хранит персональных данных — только тренировки.
+    Это тестовая версия для сбора отзывов. Спасибо, что тестируешь! 🙏</p>
+</div>
+</body>
+</html>
