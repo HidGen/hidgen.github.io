@@ -273,7 +273,7 @@ async function renderTrainer() {
     const meta = ws.length ? `посл.: ${esc(fmtDate(ws[0].startedAt).replace(/,.*/, ''))} · ${ws.length} трен.` : '<span class="muted">нет данных — обнови ⟳</span>';
     rows.push(`<div class="item" data-act="open-trainee" data-id="${esc(t.id)}">
       <div class="grow"><div class="name">${esc(t.label || t.id)}</div><div class="meta">${meta}</div></div>
-      <div class="muted" style="font-size:22px">›</div></div>`);
+      <div class="muted" style="font-size:1.3rem">›</div></div>`);
   }
   const right = `${(list.length && ghReady()) ? `<button class="icon-btn" data-act="sync-trainees">${S.sync.running ? '…' : '⟳'}</button>` : ''}<button class="icon-btn" data-act="open-add-trainee">＋</button>`;
   app.innerHTML = topBar('Подопечные', right) +
@@ -337,13 +337,13 @@ async function renderHistory() {
 async function renderSettings() {
   const g = gh(), id = me();
   app.innerHTML = topBar('Настройки', `<button class="icon-btn" data-act="go-home">✕</button>`) +
-    `<div class="lab" style="color:var(--muted);font-size:13px">Роль</div>
+    `<div class="lab" style="color:var(--muted);font-size:.82rem">Роль</div>
      <div class="chips"><button class="chip ${S.role === 'lifter' ? 'active' : ''}" data-act="set-role" data-role="lifter">🏋 Качок</button>
        <button class="chip ${S.role === 'trainer' ? 'active' : ''}" data-act="set-role" data-role="trainer">📋 Тренер</button></div>
-     <div class="card"><div class="muted" style="font-size:13px">Твой ID — дай тренеру, чтобы он видел/вёл твои тренировки:</div>
-       <div style="display:flex;gap:10px;align-items:center;margin-top:8px"><div style="font-size:24px;font-weight:800;letter-spacing:1px;flex:1">${esc(id)}</div>
+     <div class="card"><div class="muted" style="font-size:.82rem">Твой ID — дай тренеру, чтобы он видел/вёл твои тренировки:</div>
+       <div style="display:flex;gap:10px;align-items:center;margin-top:8px"><div style="font-size:1.45rem;font-weight:800;letter-spacing:1px;flex:1">${esc(id)}</div>
          <button class="icon-btn" data-act="copy-id" data-id="${esc(id)}">копировать</button></div></div>
-     <div class="lab" style="color:var(--muted);font-size:13px;margin-top:4px">Синхронизация через GitHub (по умолчанию встроена — вводить ничего не нужно)</div>
+     <div class="lab" style="color:var(--muted);font-size:.82rem;margin-top:4px">Синхронизация через GitHub (по умолчанию встроена — вводить ничего не нужно)</div>
      <label class="field"><div class="lab">Репозиторий данных (owner/name)</div><input class="text" id="ghRepo" value="${esc(g.repo)}" placeholder="HidGen/liftlog-data" autocomplete="off"></label>
      <label class="field" style="margin-top:8px"><div class="lab">Токен — переопределить (пусто = встроенный)</div><input class="text" id="ghToken" type="password" value="" placeholder="встроен по умолчанию" autocomplete="off"></label>
      <button class="btn btn-primary" data-act="sync-now" style="margin-top:10px">${S.sync.running ? '…' : '⟳ Синхронизировать'}</button>
