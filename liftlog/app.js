@@ -123,6 +123,7 @@ const S = {
   screen: 'home', workout: null, exercise: null, entries: [],
   draft: { name: '', kind: DEFAULT_KIND, values: defValues(DEFAULT_KIND) },
   _restAt: 0,
+  role: 'lifter', sync: { running: false, msg: '' }, trainee: null,
 };
 
 // ──────────────────────────── данные ────────────────────────────
@@ -186,6 +187,65 @@ async function importData(file) {
   }
 }
 
+// ──────────────────── аккаунт / роль / синхронизация ────────────────────
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem('ll_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { localStorage.setItem('ll_' + k, JSON.stringify(v)); },
+};
+const CODE_ALPH = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+function genCode(n) { let s = ''; for (let i = 0; i < n; i++) s += CODE_ALPH[Math.floor(Math.random() * CODE_ALPH.length)]; return s; }
+function athleteId() { let id = LS.get('athleteId', null); if (!id) { id = genCode(4) + '-' + genCode(4); LS.set('athleteId', id); } return id; }
+function syncUrl() { return LS.get('syncUrl', ''); }   // пусто = синк выключен, приложение чисто локальное
+function trainees() { return LS.get('trainees', []); }
+
+const STORES = ['workouts', 'exercises', 'entries', 'catalog'];
+const keyOf = (store, r) => (store === 'catalog' ? r.name : r.id);
+
+async function localChanges(since) {
+  const out = [];
+  for (const store of STORES) for (const r of await getAll(store)) {
+    if ((r.updatedAt || 0) > since) out.push({ store, id: keyOf(store, r), updatedAt: r.updatedAt || 0, deleted: !!r.deleted, data: r });
+  }
+  return out;
+}
+async function applyChanges(changes) {
+  for (const ch of changes) {
+    const rec = ch.data; if (!rec) continue;
+    const existing = (await getAll(ch.store)).find((x) => keyOf(ch.store, x) === keyOf(ch.store, rec));
+    if (!existing || (rec.updatedAt || 0) >= (existing.updatedAt || 0)) await put(ch.store, rec); // put без stamp!
+  }
+}
+async function syncNow() {
+  if (S.sync.running) return;
+  if (!syncUrl()) { S.sync.msg = 'синк выключен — укажи адрес сервера'; if (S.screen === 'settings') render(); return; }
+  S.sync.running = true; S.sync.msg = 'синхронизация…'; if (S.screen === 'settings') render();
+  try {
+    const since = LS.get('lastSync', 0);
+    const changes = await localChanges(since);
+    const res = await fetch(syncUrl() + '/api/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ athleteId: athleteId(), since, changes }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    await applyChanges(data.changes || []);
+    LS.set('lastSync', data.serverTime || since);
+    S.sync.msg = `ок · ↑${changes.length} ↓${(data.changes || []).length} · ${new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}`;
+    if (S.workout) S.workout = await activeWorkout();
+  } catch (e) {
+    S.sync.msg = 'нет связи с сервером (' + e.message + ')';
+  }
+  S.sync.running = false; render();
+}
+async function fetchTrainee(id) {
+  const res = await fetch(syncUrl() + '/api/athlete?id=' + encodeURIComponent(id) + '&since=0');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const g = { workouts: [], exercises: [], entries: [] };
+  for (const ch of data.changes || []) if (!ch.deleted && g[ch.store]) g[ch.store].push(ch.data);
+  return g;
+}
+
 // ──────────────────────────── навигация ────────────────────────────
 function go(screen) { S.screen = screen; render(); }
 async function openExercise(ex) {
@@ -213,18 +273,23 @@ function fieldStepper(field, value) {
 function draftFields() { return kindOf(S.draft.kind).fields.map((f) => fieldStepper(f, S.draft.values[f.key])).join(''); }
 
 async function render() {
-  if (S.screen === 'home') return renderHome();
+  if (S.screen === 'settings') return renderSettings();
+  if (S.role === 'trainer') return S.screen === 'trainee' ? renderTrainee() : renderTrainer();
   if (S.screen === 'newExercise') return renderNewExercise();
   if (S.screen === 'exercise') return renderExercise();
   if (S.screen === 'history') return renderHistory();
+  return renderHome();
 }
 
 async function renderHome() {
   if (!S.workout) {
-    app.innerHTML = topBar('Считалка для качалки', `<button class="icon-btn" data-act="open-history">История</button>`) +
+    app.innerHTML = topBar('Считалка для качалки') +
       `<div style="flex:1"></div>
        <button class="btn btn-primary btn-big" data-act="start-workout">▶ Начать тренировку</button>
-       <div class="empty">Данные хранятся на устройстве, работает офлайн.</div>`;
+       <div class="btn-row">
+         <button class="btn" data-act="open-history">📋 История</button>
+         <button class="btn" data-act="open-settings">⚙ Настройки</button></div>
+       <div class="empty" style="padding-top:6px">Данные хранятся на устройстве, работает офлайн.</div>`;
     return;
   }
   const exs = await exercisesOf(S.workout.id);
@@ -232,7 +297,7 @@ async function renderHome() {
   const rows = exs.map((ex) => `<div class="item" data-act="open-exercise" data-id="${ex.id}">
       <div class="grow"><div class="name">${kindOf(ex.kind).icon} ${esc(ex.name)}</div><div class="meta">${esc(exSummary(ex))}</div></div>
       <div class="big">${ex._entries.length}</div></div>`).join('');
-  app.innerHTML = topBar('Тренировка', `<button class="icon-btn" data-act="open-history">История</button>`) +
+  app.innerHTML = topBar('Тренировка', `<button class="icon-btn" data-act="open-settings">⚙</button><button class="icon-btn" data-act="open-history">История</button>`) +
     `<div class="timer">идёт <b id="wtime">${fmtClock(Date.now() - S.workout.startedAt)}</b>${tonnage ? ` · тоннаж ${Math.round(tonnage)} кг` : ''}</div>
      <div class="list">${rows || '<div class="empty">Упражнений пока нет</div>'}</div>
      <button class="btn btn-primary" data-act="new-exercise">+ Упражнение</button>
@@ -292,6 +357,63 @@ async function renderHistory() {
   f.addEventListener('change', async () => { if (f.files[0]) { await importData(f.files[0]); alert('Импорт завершён'); go('history'); } });
 }
 
+async function renderSettings() {
+  const id = athleteId(), last = LS.get('lastSync', 0);
+  app.innerHTML = topBar('Настройки', `<button class="icon-btn" data-act="go-home">✕</button>`) +
+    `<div class="label-row"><span class="l">Роль</span></div>
+     <div class="chips">
+       <button class="chip ${S.role === 'lifter' ? 'active' : ''}" data-act="set-role" data-role="lifter">🏋 Качок</button>
+       <button class="chip ${S.role === 'trainer' ? 'active' : ''}" data-act="set-role" data-role="trainer">📋 Тренер</button></div>
+     <div class="card">
+       <div class="muted" style="font-size:13px">Твой ID — дай его тренеру, чтобы он видел твои тренировки:</div>
+       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+         <div style="font-size:24px;font-weight:800;letter-spacing:1px;flex:1">${esc(id)}</div>
+         <button class="icon-btn" data-act="copy-id" data-id="${esc(id)}">копировать</button></div></div>
+     <label class="field"><div class="lab">Сервер синхронизации (пусто = только на устройстве)</div>
+       <input class="text" id="syncUrl" value="${esc(syncUrl())}" placeholder="напр. http://localhost:5090" autocomplete="off"></label>
+     <button class="btn btn-primary" data-act="sync-now">${S.sync.running ? '…' : '⟳ Синхронизировать'}</button>
+     <div class="timer">${esc(S.sync.msg || ('последняя: ' + (last ? new Date(last).toLocaleString('ru') : 'не было')))}</div>
+     <div class="btn-row"><button class="btn btn-ghost" data-act="export">⬇ Экспорт</button><button class="btn btn-ghost" data-act="import">⬆ Импорт</button></div>
+     <input type="file" id="importFile" accept="application/json" hidden>`;
+  const u = $('#syncUrl'); if (u) u.addEventListener('change', () => LS.set('syncUrl', u.value.trim()));
+  const f = $('#importFile'); if (f) f.addEventListener('change', async () => { if (f.files[0]) { await importData(f.files[0]); alert('Импорт завершён'); render(); } });
+}
+
+async function renderTrainer() {
+  const rows = trainees().map((t) => `<div class="item">
+      <div class="grow" data-act="open-trainee" data-id="${esc(t.id)}"><div class="name">${esc(t.label || t.id)}</div><div class="meta">${esc(t.id)}</div></div>
+      <button class="x" data-act="remove-trainee" data-id="${esc(t.id)}">✕</button></div>`).join('');
+  app.innerHTML = topBar('Подопечные', `<button class="icon-btn" data-act="open-settings">⚙</button>`) +
+    `<div class="list">${rows || '<div class="empty">Пока никого. Добавь по ID, который дал качок.</div>'}</div>
+     <label class="field"><div class="lab">ID подопечного</div>
+       <input class="text" id="tId" placeholder="напр. K7Q2-9MF3" autocomplete="off"></label>
+     <input class="text" id="tLabel" placeholder="Имя (необязательно)" autocomplete="off" style="margin-top:8px">
+     <button class="btn btn-primary" data-act="add-trainee" style="margin-top:8px">+ Добавить</button>`;
+}
+
+async function renderTrainee() {
+  const t = S.trainee; if (!t) return go('home');
+  const g = t.data, exByW = {}, enByEx = {};
+  g.exercises.forEach((ex) => { (exByW[ex.workoutId] = exByW[ex.workoutId] || []).push(ex); });
+  g.entries.forEach((en) => { (enByEx[en.exerciseId] = enByEx[en.exerciseId] || []).push(en); });
+  const ws = g.workouts.filter((w) => w.finishedAt && !w.deleted).sort((a, b) => b.startedAt - a.startedAt);
+  const blocks = ws.map((w) => {
+    const exs = (exByW[w.id] || []).filter((e) => !e.deleted).sort((a, b) => a.startedAt - b.startedAt);
+    const inner = exs.map((ex) => {
+      const k = kindOf(ex.kind);
+      const ens = (enByEx[ex.id] || []).filter((e) => !e.deleted).sort((a, b) => a.idx - b.idx);
+      const summary = ens.map((e) => k.summary(e.values)).join(' · ') || '—';
+      return `<div class="item"><div class="grow"><div class="name">${k.icon} ${esc(ex.name)}</div><div class="meta">${esc(summary)}</div></div></div>`;
+    }).join('');
+    return `<details class="card"><summary><div class="item" style="border:none;padding:0;background:none">
+      <div class="grow"><div class="name">${esc(fmtDate(w.startedAt))}</div><div class="meta">${exs.length} упр</div></div><div class="muted">▾</div></div></summary>
+      <div class="list" style="margin-top:10px">${inner || '<div class="empty">пусто</div>'}</div></details>`;
+  }).join('');
+  app.innerHTML = topBar(t.label || t.id, `<button class="icon-btn" data-act="go-trainer">✕</button>`) +
+    `<div class="muted" style="font-size:13px;margin-bottom:6px">только просмотр · ${esc(t.id)}</div>
+     <div class="list">${blocks || '<div class="empty">Нет данных (или нет связи с сервером)</div>'}</div>`;
+}
+
 // ──────────────────────────── события ────────────────────────────
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('[data-act]'); if (!t) return;
@@ -338,6 +460,26 @@ document.addEventListener('click', async (e) => {
   if (act === 'go-home') return go('home');
   if (act === 'export') return exportData();
   if (act === 'import') { const f = $('#importFile'); if (f) f.click(); return; }
+  // ── роль / синхронизация / тренер ──
+  if (act === 'open-settings') return go('settings');
+  if (act === 'set-role') { S.role = t.dataset.role; LS.set('role', S.role); return go(S.role === 'trainer' ? 'trainer' : 'home'); }
+  if (act === 'copy-id') { try { await navigator.clipboard.writeText(t.dataset.id); } catch (e) {} alert('ID скопирован: ' + t.dataset.id); return; }
+  if (act === 'sync-now') { const u = $('#syncUrl'); if (u) LS.set('syncUrl', u.value.trim()); return syncNow(); }
+  if (act === 'go-trainer') { S.trainee = null; return go('trainer'); }
+  if (act === 'add-trainee') {
+    const idEl = $('#tId'); const id = idEl && idEl.value.trim(); if (!id) return;
+    const label = ($('#tLabel') && $('#tLabel').value.trim()) || '';
+    const list = trainees(); if (!list.find((x) => x.id === id)) list.push({ id, label });
+    LS.set('trainees', list); return go('trainer');
+  }
+  if (act === 'remove-trainee') { LS.set('trainees', trainees().filter((x) => x.id !== t.dataset.id)); return go('trainer'); }
+  if (act === 'open-trainee') {
+    const id = t.dataset.id, meta = trainees().find((x) => x.id === id) || { id };
+    S.trainee = { id, label: meta.label, data: { workouts: [], exercises: [], entries: [] } };
+    go('trainee');
+    try { S.trainee.data = await fetchTrainee(id); } catch (e) { alert('Не удалось получить данные: ' + e.message); }
+    return render();
+  }
 });
 
 // тикающие таймеры
@@ -349,6 +491,11 @@ setInterval(() => {
 // ──────────────────────────── старт ────────────────────────────
 (async function init() {
   if ('serviceWorker' in navigator) { try { await navigator.serviceWorker.register('sw.js'); } catch (e) {} }
+  S.role = LS.get('role', 'lifter');
+  athleteId();                                   // сгенерировать ID при первом запуске
   S.workout = await activeWorkout();
+  S.screen = S.role === 'trainer' ? 'trainer' : 'home';
   render();
+  if (S.role === 'lifter' && navigator.onLine && syncUrl()) syncNow();   // автосинк только если синк настроен
+  window.addEventListener('online', () => { if (S.role === 'lifter' && syncUrl()) syncNow(); });
 })();

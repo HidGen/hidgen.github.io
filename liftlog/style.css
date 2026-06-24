@@ -20,7 +20,8 @@ html, body {
 }
 #app {
   max-width: 560px; margin: 0 auto; min-height: 100vh;
-  padding: 14px 14px calc(24px + env(safe-area-inset-bottom));
+  padding: calc(12px + env(safe-area-inset-top)) max(14px, env(safe-area-inset-left))
+           calc(24px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right));
   display: flex; flex-direction: column; gap: 12px;
 }
 
